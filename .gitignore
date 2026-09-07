@@ -1,0 +1,31 @@
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+tfplan
+*.tfplan
+.terraform.tfstate.lock.info
+
+# Keep .terraform.lock.hcl committed (provider pins for stack roots).
+
+# --- Local overrides (optional; committed terraform.tfvars uses placeholders) ---
+**/terraform.tfvars.local
+.env
+.env.*
+!.env.example
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
