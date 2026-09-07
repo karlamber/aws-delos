@@ -1,20 +1,18 @@
 # aws-delos — Delos landscape (plain Terraform)
 
-This repo builds the same Argus app infrastructure as [`aws-delphi`](../aws-delphi) and [`aws-kos`](../aws-kos), using **plain Terraform only** — no Terragrunt and no Python orchestrator. You `cd` into each stack folder (or use the small helper script) and run `terraform` yourself.
+This repo builds the same Argus app infrastructure as **aws-delphi** and **aws-kos**, using **plain Terraform only** — no Terragrunt and no Python orchestrator. You `cd` into each stack folder (or use the small helper script) and run `terraform` yourself.
 
 In short: same AWS resources and modules, different way of running the stacks.
 
 Hostnames in this lab use the **fifty9** domain (for example `argus-dev.fifty9.net`). The repo is meant as a learnable / portfolio example of multi-stack AWS infrastructure. Committed config uses placeholders; replace them before you apply.
 
-Sibling landscapes:
+Sibling landscapes (same Argus stacks, different glue):
 
 | Repo | How stacks are run |
 |---|---|
-| [`aws-delphi`](../aws-delphi) | Terragrunt |
-| [`aws-kos`](../aws-kos) | Python orchestrator + Terraform |
+| `aws-delphi` | Terragrunt |
+| `aws-kos` | Python orchestrator + Terraform |
 | **`aws-delos`** (this repo) | Plain Terraform only |
-
-For a condensed Terragrunt ↔ Terraform mapping, see [TERRAGRUNT_TO_TERRAFORM.md](./TERRAGRUNT_TO_TERRAFORM.md).
 
 ---
 
