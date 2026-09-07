@@ -1,30 +1,28 @@
 # aws-delos — Delos landscape (plain Terraform)
 
-This repo builds the same Argus app infrastructure as **aws-delphi** and **aws-kos**, using **plain Terraform only** — no Terragrunt and no Python orchestrator. You `cd` into each stack folder (or use the small helper script) and run `terraform` yourself.
+This repo is one of **three** implementations of the same Argus CMDB infrastructure on AWS. All three create the same kinds of resources (VPC, Cognito, Lambda, API Gateway, CloudFront, DNS, and so on). What differs is **how you run the stacks**:
 
-In short: same AWS resources and modules, different way of running the stacks.
+| Repo | Method | Link |
+|---|---|---|
+| `aws-delphi` | Terragrunt wraps Terraform | [karlamber/aws-delphi](https://github.com/karlamber/aws-delphi) |
+| `aws-kos` | Python orchestrator runs Terraform | [karlamber/aws-kos](https://github.com/karlamber/aws-kos) |
+| **`aws-delos`** (this repo) | Plain Terraform only (no wrapper) | — |
+
+Use this repo to see the stacks as ordinary Terraform roots — you pass shared settings with `-var-file` and apply folders in order yourself (or with `scripts/tf-stack.sh`). Compare with Delphi (Terragrunt) or Kos (Python) for the same infrastructure.
 
 Hostnames in this lab use the **fifty9** domain (for example `argus-dev.fifty9.net`). The repo is meant as a learnable / portfolio example of multi-stack AWS infrastructure. Committed config uses placeholders; replace them before you apply.
 
-Sibling landscapes (same Argus stacks, different glue):
-
-| Repo | How stacks are run |
-|---|---|
-| `aws-delphi` | Terragrunt |
-| `aws-kos` | Python orchestrator + Terraform |
-| **`aws-delos`** (this repo) | Plain Terraform only |
-
 ---
 
-## Delphi vs Kos vs Delos
+## How the three implementations differ
 
-| | Delphi | Kos | Delos |
+| | Delphi | Kos | Delos (this repo) |
 |---|---|---|---|
 | What runs the stacks | Terragrunt | Python (`orchestrator/`) | You + Terraform CLI |
 | Shared account settings | `account.hcl` + `root.hcl` | `account.json` + `region.json` | `environments/<env>/terraform.tfvars` |
-| Which stack runs when | `dependency` blocks in HCL | `stacks.json` | Documented apply order (and optional `scripts/tf-stack.sh`) |
+| Which stack runs when | `dependency` / `dependencies` in each stack’s HCL | `stacks.json` | Documented apply order (and optional `scripts/tf-stack.sh`) |
 | How one stack reads another’s outputs | Terragrunt `dependency.x.outputs` | `data.terraform_remote_state` | `data.terraform_remote_state` |
-| Layout | `aws-delphi-dev/us-east-1/…` | `aws-kos-dev/us-east-1/…` | `live/<env>/us-east-1/…` |
+| Layout | `aws-delphi-{env}/us-east-1/…` | `aws-kos-{env}/us-east-1/…` | `live/<env>/us-east-1/…` |
 
 Do not apply until you have a real AWS account, filled-in env tfvars, and a state bucket (see [Before first apply](#before-first-apply)).
 
@@ -79,14 +77,12 @@ Suggested apply order:
 
 ---
 
-## Compared to Delphi / Kos (one stack)
+## Same stack, three ways (example: `vpc`)
 
-Example: the `vpc` stack
-
-| | Delphi | Kos | Delos |
+| | Delphi | Kos | Delos (this repo) |
 |---|---|---|---|
 | Where you edit stack settings | `vpc/terragrunt.hcl` | `vpc/main.tf` | `live/<env>/…/vpc/main.tf` |
-| Where the shared account ID comes from | Parent `account.hcl` | `account.json` → written into tfvars by Python | `environments/<env>/terraform.tfvars` via `-var-file` |
+| Where the shared account ID comes from | Parent `account.hcl` (merged by Terragrunt) | `account.json` → written into tfvars by Python | `environments/<env>/terraform.tfvars` via `-var-file` |
 | How you run it | `terragrunt plan` in the stack folder | `python3 -m orchestrator plan vpc` | `terraform plan -var-file=…` (or `./scripts/tf-stack.sh … plan`) |
 
 Reusable modules live under `tf-modules/`. The application name is still **argus**.
