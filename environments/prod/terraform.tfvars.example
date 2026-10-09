@@ -14,6 +14,6 @@ artifact_bucket       = "s3-EXAMPLE-mgmt-ue1-shared-lambda"
 hosted_zone_name      = "fifty9.net"
 
 oidc_subjects = [
-  "EXAMPLE_GITHUB_ORG/argus-api-lambda:*",
-  "EXAMPLE_GITHUB_ORG/argus-front-end:*",
+  "EXAMPLE_GITHUB_ORG/easycmdb-api:*",
+  "EXAMPLE_GITHUB_ORG/easycmdb-web:*",
 ]

@@ -1,6 +1,6 @@
 # aws-delos — Delos landscape (plain Terraform)
 
-This repo is one of **three** implementations of the same Argus CMDB infrastructure on AWS. All three create the same kinds of resources (VPC, Cognito, Lambda, API Gateway, CloudFront, DNS, and so on). What differs is **how you run the stacks**:
+This repo is one of **three** implementations of the AWS landscape for [easyCMDB](https://github.com/karlamber/easycmdb-web). The infrastructure alias stays `argus`. The API is [easycmdb-api](https://github.com/karlamber/easycmdb-api); the UI is [easycmdb-web](https://github.com/karlamber/easycmdb-web). All three create the same kinds of resources (VPC, Cognito, Lambda, API Gateway, CloudFront, DNS, and so on). What differs is **how you run the stacks**:
 
 | Repo | Method | Link |
 |---|---|---|
@@ -184,3 +184,4 @@ Each env gets its own `/20` (no CIDR overlap between dev and prod):
 | `prod` | `10.0.80.0/20` | `10.0.80.0/21` | `live/prod/us-east-1/vpc/main.tf` |
 
 These blocks do not overlap Delphi (`10.0.0.0/20` / `10.0.48.0/20`) or Kos (`10.0.16.0/20` / `10.0.64.0/20`).
+AWS stays in `10.0.0.0/11`; Azure VNets use `10.32.0.0/11`.
