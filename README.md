@@ -1,187 +1,92 @@
-# aws-delos — Delos landscape (plain Terraform)
+# aws-delos
 
-This repo is one of **three** implementations of the AWS landscape for [easyCMDB](https://github.com/karlamber/easycmdb-web). The infrastructure alias stays `argus`. The API is [easycmdb-api](https://github.com/karlamber/easycmdb-api); the UI is [easycmdb-web](https://github.com/karlamber/easycmdb-web). All three create the same kinds of resources (VPC, Cognito, Lambda, API Gateway, CloudFront, DNS, and so on). What differs is **how you run the stacks**:
+This repository is the plain-Terraform layout for the same easyCMDB landscape that [aws-delphi](https://github.com/karlamber/aws-delphi) runs with Terragrunt and [aws-kos](https://github.com/karlamber/aws-kos) runs with a Python orchestrator. The infrastructure alias is `argus`. The API is [easycmdb-api](https://github.com/karlamber/easycmdb-api) and the UI is [easycmdb-web](https://github.com/karlamber/easycmdb-web). All three repositories create the same kinds of resources, including the VPC, Cognito, Aurora, the API Lambda, API Gateway, CloudFront, TLS, and DNS. Delos is the version in which you pass shared settings with `-var-file` and apply each folder yourself, or with `scripts/tf-stack.sh`, so the wiring that a wrapper would hide stays visible in the stack directory.
 
-| Repo | Method | Link |
-|---|---|---|
-| `aws-delphi` | Terragrunt wraps Terraform | [karlamber/aws-delphi](https://github.com/karlamber/aws-delphi) |
-| `aws-kos` | Python orchestrator runs Terraform | [karlamber/aws-kos](https://github.com/karlamber/aws-kos) |
-| **`aws-delos`** (this repo) | Plain Terraform only (no wrapper) | — |
+| Repository | What runs the stacks | Where shared settings live | How order is decided | How one stack reads another | Layout |
+|---|---|---|---|---|---|
+| [aws-delphi](https://github.com/karlamber/aws-delphi) | Terragrunt | `account.hcl` and `root.hcl` | `dependency` blocks in each unit | Terragrunt `dependency` outputs | `aws-delphi-<env>/us-east-1/…` |
+| [aws-kos](https://github.com/karlamber/aws-kos) | Python in `orchestrator/` | `account.json` and `region.json` | `stacks.json` | `data.terraform_remote_state` | `aws-kos-<env>/us-east-1/…` |
+| aws-delos (this repository) | Terraform CLI, with an optional shell helper | `environments/<env>/terraform.tfvars` | The order in this README | `data.terraform_remote_state` | `live/<env>/us-east-1/…` |
 
-Use this repo to see the stacks as ordinary Terraform roots — you pass shared settings with `-var-file` and apply folders in order yourself (or with `scripts/tf-stack.sh`). Compare with Delphi (Terragrunt) or Kos (Python) for the same infrastructure.
+Hostnames in this lab use the fifty9 domain, for example `argus-dev.fifty9.net`. Committed configuration uses placeholders. Replace them before an apply, and apply only after a real account, filled-in tfvars, and a state bucket exist.
 
-Hostnames in this lab use the **fifty9** domain (for example `argus-dev.fifty9.net`). The repo is meant as a learnable / portfolio example of multi-stack AWS infrastructure. Committed config uses placeholders; replace them before you apply.
+## How a stack receives its settings
 
----
+Terraform reads only the files inside one stack folder. It cannot walk up to a parent directory and inherit shared settings the way Terragrunt does. Delphi fills that gap with Terragrunt, and Kos fills it with Python that writes tfvars before each run. Delos leaves the step explicit. Shared account and region values live in `environments/<env>/terraform.tfvars`, and every plan or apply passes that file with `-var-file`, which is what `scripts/tf-stack.sh` does for you. Stacks are applied in dependency order so remote state exists for the next stack. Cross-stack values come from `remote_state.tf` through `data.terraform_remote_state`.
 
-## How the three implementations differ
+Terraform still creates and changes the AWS resources. There is no wrapper that invents providers, backends, or merge logic at runtime, because those files already live in each stack directory. An optional `environments/<env>/terraform.tfvars.local` is gitignored and, when `tf-stack.sh` is used, is applied after the committed tfvars. Each stack's `main.tf` holds settings that belong only to that stack, such as the VPC CIDR, the Cognito URLs, and the Lambda environment. Each stack's `backend.hcl` holds the S3 state bucket, key, and profile. Modules under `tf-modules/` are the reusable Terraform for the landscape. `scripts/generate-stacks.py` can regenerate stack boilerplate for both `dev` and `prod` after a structural change. Day-to-day settings still belong in `main.tf`.
 
-| | Delphi | Kos | Delos (this repo) |
-|---|---|---|---|
-| What runs the stacks | Terragrunt | Python (`orchestrator/`) | You + Terraform CLI |
-| Shared account settings | `account.hcl` + `root.hcl` | `account.json` + `region.json` | `environments/<env>/terraform.tfvars` |
-| Which stack runs when | `dependency` / `dependencies` in each stack’s HCL | `stacks.json` | Documented apply order (and optional `scripts/tf-stack.sh`) |
-| How one stack reads another’s outputs | Terragrunt `dependency.x.outputs` | `data.terraform_remote_state` | `data.terraform_remote_state` |
-| Layout | `aws-delphi-{env}/us-east-1/…` | `aws-kos-{env}/us-east-1/…` | `live/<env>/us-east-1/…` |
+A VPC, as a concrete example, is edited in `live/<env>/us-east-1/vpc/main.tf`, receives its account ID from `environments/<env>/terraform.tfvars`, and is planned with `terraform plan -var-file=…` or `./scripts/tf-stack.sh … plan`. The same stack in Delphi is `vpc/terragrunt.hcl`, and in Kos it is `vpc/main.tf` planned through `python3 -m orchestrator plan vpc`.
 
-Do not apply until you have a real AWS account, filled-in env tfvars, and a state bucket (see [Before first apply](#before-first-apply)).
+## Apply order
 
----
+Two kinds of dependency show up in this tree, and they do not have the same requirement before a plan can succeed. An order-only relationship means apply B after A, for example the OIDC provider before the OIDC role, and B does not need A's state file. An output-wiring relationship means stack B has a `remote_state.tf` that reads A, so A must already have been applied and its state object must exist in S3. `terraform plan` previews changes and does not write that object. State appears after a successful apply.
 
-## How it works
-
-Terraform only looks at files inside a stack folder. It cannot walk up to a parent folder and pull in shared settings the way Terragrunt does.
-
-In Delphi, Terragrunt fills that gap. In Kos, Python does. In Delos, **you** do it explicitly:
-
-1. Put shared account/region values in `environments/<env>/terraform.tfvars`
-2. Pass that file on every plan/apply (`-var-file=…`, or `./scripts/tf-stack.sh …`)
-3. Apply stacks in dependency order so remote state exists for the next stack
-4. Cross-stack values come from `remote_state.tf` → `data.terraform_remote_state`
-
-Terraform still creates and changes AWS resources. There is no wrapper that invents providers, backends, or merge logic at runtime — those files live in each stack directory.
-
-### What you edit
-
-| File | Purpose |
-|---|---|
-| `environments/<env>/terraform.tfvars` | Shared values: account ID, DNS role, OIDC subjects, artifact bucket, hosted zone |
-| Optional `environments/<env>/terraform.tfvars.local` | Local overrides (gitignored); applied after the committed tfvars when using `tf-stack.sh` |
-| Each stack’s `main.tf` | Settings unique to that stack (VPC CIDR, Cognito URLs, Lambda env, …) |
-| Each stack’s `backend.hcl` | S3 state bucket/key/profile for that stack |
-| Modules under `tf-modules/` | Reusable Terraform for this landscape |
-
-Optional: `scripts/generate-stacks.py` regenerates stack boilerplate for both `dev` and `prod` (useful after structural changes). Prefer editing `main.tf` for day-to-day stack settings.
-
-### Dependencies between stacks
-
-| Kind | How it shows up | Needed before `plan`? |
-|---|---|---|
-| Order-only | Apply B after A (for example OIDC provider before OIDC role) | No remote state required |
-| Output wiring | Stack B has `remote_state.tf` reading A | Yes — A must already be **applied** so its state exists in S3 |
-
-Suggested apply order:
-
-1. `cloudwatch_logging`
-2. `vpc`
-3. `cognito`
-4. `github_oidc_provider` → `github_oidc_role`
-5. `argus/iam-lambda_policy`
-6. `argus/rds`
-7. `argus/lambda-argus_api`
-8. `argus/api-gateway`
-9. `argus/tls`
-10. `argus/cloudfront`
-11. `argus/dns_record`
-12. `argus/ssm_param`
-
----
-
-## Same stack, three ways (example: `vpc`)
-
-| | Delphi | Kos | Delos (this repo) |
-|---|---|---|---|
-| Where you edit stack settings | `vpc/terragrunt.hcl` | `vpc/main.tf` | `live/<env>/…/vpc/main.tf` |
-| Where the shared account ID comes from | Parent `account.hcl` (merged by Terragrunt) | `account.json` → written into tfvars by Python | `environments/<env>/terraform.tfvars` via `-var-file` |
-| How you run it | `terragrunt plan` in the stack folder | `python3 -m orchestrator plan vpc` | `terraform plan -var-file=…` (or `./scripts/tf-stack.sh … plan`) |
-
-Reusable modules live under `tf-modules/`. The application name is still **argus**.
-
----
+Apply one stack at a time, in this order: `cloudwatch_logging`, then `vpc`, then `cognito`, then `github_oidc_provider` followed by `github_oidc_role`, then `argus/iam-lambda_policy`, then `argus/rds`, then `argus/lambda-argus_api`, then `argus/api-gateway`, then `argus/tls`, then `argus/cloudfront`, then `argus/dns_record`, and finally `argus/ssm_param`. The dev and prod VPC stacks set `create_internet_gateway` and `create_nat_gateways` to false, because API Gateway terminates the public request and the Lambda only needs a path to Aurora inside the VPC.
 
 ## Layout
 
 ```text
 aws-delos/
 ├── environments/
-│   ├── dev/terraform.tfvars(.example)   # shared config for all dev stacks
+│   ├── dev/terraform.tfvars(.example)
 │   └── prod/terraform.tfvars(.example)
-├── tf-modules/                          # shared Terraform modules for this landscape
+├── tf-modules/
 ├── live/
 │   ├── dev/us-east-1/
 │   │   ├── cloudwatch_logging, vpc, cognito, github_oidc_*
-│   │   └── argus/                       # rds, lambda, apigw, tls, cloudfront, dns, ssm, iam
-│   └── prod/us-east-1/                  # same stacks, prod tfvars / backends
+│   │   └── argus/
+│   └── prod/us-east-1/
 └── scripts/
-    ├── tf-stack.sh                      # init/plan/apply helper (picks env tfvars)
-    └── generate-stacks.py               # regenerates live/ boilerplate
+    ├── tf-stack.sh
+    └── generate-stacks.py
 ```
 
-Each stack folder is a normal Terraform root: `main.tf`, `variables.tf`, `providers.tf`, `versions.tf`, `backend.hcl`, plus `remote_state.tf` / `outputs.tf` when needed.
-
----
+Each stack folder is an ordinary Terraform root: `main.tf`, `variables.tf`, `providers.tf`, `versions.tf`, `backend.hcl`, and, when the stack reads another stack, `remote_state.tf` and `outputs.tf`.
 
 ## Commands
 
+`scripts/tf-stack.sh` selects the environment tfvars that match the stack path, runs `terraform init` with that stack's `backend.hcl`, and then plans or applies. The first three commands below init logging, plan logging, and apply the VPC. The manual equivalent is `terraform init -backend-config=backend.hcl` and `terraform plan -var-file=../../../../environments/dev/terraform.tfvars` from `live/dev/us-east-1/vpc`.
+
 ```bash
 cd ~/Projects/aws-delos
-
-# Helper (recommended): init with backend.hcl, plan/apply with the right env tfvars
 ./scripts/tf-stack.sh live/dev/us-east-1/cloudwatch_logging init
 ./scripts/tf-stack.sh live/dev/us-east-1/cloudwatch_logging plan
 ./scripts/tf-stack.sh live/dev/us-east-1/vpc apply
-
-# Manual equivalent
-cd live/dev/us-east-1/vpc
-terraform init -backend-config=backend.hcl
-terraform plan -var-file=../../../../environments/dev/terraform.tfvars
 ```
 
-`prod` uses the same pattern with `live/prod/…` and `environments/prod/terraform.tfvars`.
+Prod uses the same pattern with `live/prod/…` and `environments/prod/terraform.tfvars`.
 
----
+## Before the first apply
 
-## Before first apply
+Create the AWS account you will use, for example `aws-delos-dev`. Edit `environments/dev/terraform.tfvars`, or copy the example and keep real values in a gitignored `terraform.tfvars.local`. Set `account_id`, `route53_account_id`, `dns_manager_role_arn`, `artifact_bucket`, and `oidc_subjects`. `hosted_zone_name` defaults to `fifty9.net` and can stay or change with the zone you can actually write. When this environment needs public DNS or the shared Lambda zip, grant the member account access in the management shared-services account.
 
-1. Create the AWS account(s) you will use (for example `aws-delos-dev`).
-2. Edit `environments/dev/terraform.tfvars` (or copy `.example` and maintain a gitignored `terraform.tfvars.local`):
-   - set real `account_id`, `route53_account_id`, `dns_manager_role_arn`
-   - set `artifact_bucket` and `oidc_subjects`
-   - keep or change `hosted_zone_name` (default `fifty9.net`)
-3. If this environment needs DNS or shared Lambda artifacts, grant the member account access in the management shared-services account.
-4. Sign in and confirm you are in the right account:
-   ```bash
-   aws sso login --profile aws-delos-dev
-   aws sts get-caller-identity --profile aws-delos-dev
-   ```
-5. Create the S3 bucket that stores Terraform state (once per account/region):
-   ```bash
-   aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-terraform-state --region us-east-1
-   ```
-6. Put secrets into SSM Parameter Store yourself (SecureString). Do not put real passwords in Terraform or git. The `argus/ssm_param` stack uses `<SEED_OUTSIDE_TERRAFORM>` for the DB password placeholder.
-7. Apply stacks in the order listed above (one at a time).
+Sign in and confirm the profile with `aws sso login --profile aws-delos-dev` and `aws sts get-caller-identity --profile aws-delos-dev`. Create the state bucket once for the account and region:
 
-`terraform plan` only previews changes; it does not write state to S3. State appears after a successful `apply`. Stacks with `remote_state.tf` need their parent stacks applied first.
+```bash
+aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-terraform-state --region us-east-1
+```
 
----
+Put secrets into SSM Parameter Store yourself, as `SecureString` parameters. The `argus/ssm_param` stack uses `<SEED_OUTSIDE_TERRAFORM>` as the database-password placeholder, and a real password does not belong in Terraform or in git. Then apply the stacks in the order above, one at a time.
 
-## What belongs in git vs what stays local
+## What stays local
 
-| Safe to commit | Keep local (gitignored) |
-|---|---|
-| `environments/*/terraform.tfvars` / `.example` with placeholder IDs | `terraform.tfvars.local` with real account IDs, DNS role ARN, OIDC subjects, artifact bucket |
-| Stack `main.tf` without real GitHub org/repo node IDs | `.terraform/`, `*.tfstate*`, `tfplan` |
-| Modules, scripts, README | `.env*` |
-
-Before you push (especially before making the repo public):
+Commit `environments/*/terraform.tfvars` and the example files when they contain placeholder IDs, the stack `main.tf` files without real GitHub organization or repository node IDs, the modules, the scripts, and this README. Keep `terraform.tfvars.local`, `.terraform/`, `*.tfstate*`, `tfplan`, and `.env*` on the machine that applies them. Before a push, `git status` and the search below should show no access-key prefix and no private-key block.
 
 ```bash
 git status
 git grep -E 'AKIA[0-9A-Z]{16}|BEGIN (RSA |OPENSSH )?PRIVATE' -- ':!*.lock.hcl' || true
 ```
 
-Do not commit real AWS account IDs, GitHub OIDC subject IDs, or database/SSM passwords. After the first successful `terraform init` on a machine, **do** commit any generated `.terraform.lock.hcl` files so everyone uses the same provider versions.
-
----
+Account IDs, GitHub OIDC subject IDs, and database or SSM passwords stay out of git. After the first successful `terraform init` on a machine, commit the generated `.terraform.lock.hcl` files so later runs resolve the same provider versions.
 
 ## Network
 
-Each env gets its own `/20` (no CIDR overlap between dev and prod):
+Each environment receives its own `/20` inside the AWS supernet `10.0.0.0/11`, so dev and prod never share a CIDR. Azure VNets, when they appear in the wider lab, use `10.32.0.0/11` and stay outside this block.
 
-| Env | Account block | us-east-1 VPC | Set in |
+| Environment | Account block | us-east-1 VPC | Set in |
 |---|---|---|---|
 | `dev` | `10.0.32.0/20` | `10.0.32.0/21` | `live/dev/us-east-1/vpc/main.tf` |
 | `prod` | `10.0.80.0/20` | `10.0.80.0/21` | `live/prod/us-east-1/vpc/main.tf` |
 
-These blocks do not overlap Delphi (`10.0.0.0/20` / `10.0.48.0/20`) or Kos (`10.0.16.0/20` / `10.0.64.0/20`).
-AWS stays in `10.0.0.0/11`; Azure VNets use `10.32.0.0/11`.
+Those blocks sit apart from Delphi (`10.0.0.0/20` and `10.0.48.0/20`) and from Kos (`10.0.16.0/20` and `10.0.64.0/20`).

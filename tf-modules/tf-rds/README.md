@@ -1,6 +1,6 @@
 # tf-rds
 
-**Provenance:** Deduplicated from landscape archives and sanitized.
+This module creates the Aurora PostgreSQL cluster for the Argus database on the isolated subnets. Terraform creates the empty database named `argus` and stops there. Tables and the `argus_lambda` login are applied as SQL after the cluster exists, from the landscape `initial-config.sql` where that file is present and from easycmdb-api otherwise. The master password is managed outside the Terraform files that are committed. A stack in this landscape calls it with `source = "../../../../../tf-modules/tf-rds"`.
 
 ## Required inputs
 
@@ -39,10 +39,10 @@
 
 ## Usage
 
-Reference from Terragrunt:
+A stack sets the module source as follows.
 
 ```hcl
 terraform {
-  source = "../../../tf-modules/tf-rds"
+  source = "../../../../../tf-modules/tf-rds"
 }
 ```

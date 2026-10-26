@@ -1,6 +1,6 @@
 # tf-cloudfront
 
-**Provenance:** Deduplicated from landscape archives and sanitized.
+This module creates the CloudFront distribution that serves the easyCMDB single-page app, together with the origins the stack configures. The stack passes `cloudfront_aliases` and the ACM certificate from the TLS stack, so the hostname is `argus-<env>.<zone>` once DNS validation has finished. `enable_default_waf` defaults to true, which creates a web ACL on the distribution. That ACL is a paid AWS WAF control, and setting the flag to false leaves the distribution without it. A stack in this landscape calls it with `source = "../../../../../tf-modules/tf-cloudfront"`.
 
 ## Required inputs
 
@@ -23,10 +23,10 @@
 
 ## Usage
 
-Reference from Terragrunt:
+A stack sets the module source as follows.
 
 ```hcl
 terraform {
-  source = "../../../tf-modules/tf-cloudfront"
+  source = "../../../../../tf-modules/tf-cloudfront"
 }
 ```

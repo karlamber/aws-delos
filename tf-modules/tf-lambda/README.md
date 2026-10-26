@@ -1,6 +1,6 @@
 # tf-lambda
 
-**Provenance:** Deduplicated from landscape archives and sanitized.
+This module creates the easyCMDB API function, including its log group, optional VPC attachment, and the event permissions the stack passes in. The deployment package is an object in the artifact bucket named by the account configuration, which in this lab is the shared bucket in the management account rather than a bucket this landscape creates. The database password arrives as `PGPASSWORD`, and that value is what the `argus_lambda` role must use. A stack in this landscape calls it with `source = "../../../../../tf-modules/tf-lambda"`.
 
 ## Required inputs
 
@@ -23,10 +23,10 @@
 
 ## Usage
 
-Reference from Terragrunt:
+A stack sets the module source as follows.
 
 ```hcl
 terraform {
-  source = "../../../tf-modules/tf-lambda"
+  source = "../../../../../tf-modules/tf-lambda"
 }
 ```
