@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
 from pathlib import Path
 
@@ -142,7 +143,7 @@ provider "aws" {
 
 REMOTE_STATE_LOCALS = """\
 locals {
-  remote_state_bucket  = "s3-${var.landscape}-${var.env}-${var.region_short}-terraform-state"
+  remote_state_bucket  = "s3-${var.landscape}-${var.env}-${var.region_short}-${var.account_id}-terraform-state"
   remote_state_region  = var.region
   remote_state_profile = var.aws_profile
 }
@@ -161,6 +162,15 @@ data "terraform_remote_state" "{name}" {{
 """
 
 
+def account_id_for(env: str) -> str:
+    """Read the account id the backend bucket name has to include."""
+    path = REPO / "environments" / env / "terraform.tfvars"
+    match = re.search(r'(?m)^account_id\s*=\s*"([^"]+)"', path.read_text())
+    if not match:
+        raise SystemExit(f"account_id missing from {path}")
+    return match.group(1)
+
+
 def write_stack(
     env: str,
     stack_key: str,
@@ -171,6 +181,7 @@ def write_stack(
     providers_body: str = PROVIDERS,
 ) -> None:
     """Write a stack under live/<env>/us-east-1/<stack_key>/."""
+    account_id = account_id_for(env)
     stack_dir = REPO / "live" / env / "us-east-1" / stack_key
     stack_dir.mkdir(parents=True, exist_ok=True)
 
@@ -199,7 +210,7 @@ def write_stack(
     (stack_dir / "backend.hcl").write_text(
         textwrap.dedent(
             f"""\
-            bucket  = "s3-delos-{env}-ue1-terraform-state"
+            bucket  = "s3-delos-{env}-ue1-{account_id}-terraform-state"
             key     = "live/{env}/us-east-1/{stack_key}/terraform.tfstate"
             region  = "us-east-1"
             profile = "aws-delos-{env}"
@@ -648,7 +659,7 @@ module "cloudfront" {{
   apigw_origin_host = replace(data.terraform_remote_state.api_gateway.outputs.api_endpoint, "https://", "")
 
   spa_origin = {{
-    domain_name = "s3-${{local.app_alias}}-${{var.env}}-${{var.region_short}}-spa.s3.${{var.region}}.amazonaws.com"
+    domain_name = "s3-${{local.app_alias}}-${{var.env}}-${{var.region_short}}-${{var.account_id}}-spa.s3.${{var.region}}.amazonaws.com"
     origin_id   = "${{local.app_alias}}-spa-origin"
   }}
 

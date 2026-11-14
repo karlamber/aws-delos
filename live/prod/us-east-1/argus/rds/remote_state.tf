@@ -1,5 +1,5 @@
 locals {
-  remote_state_bucket  = "s3-${var.landscape}-${var.env}-${var.region_short}-terraform-state"
+  remote_state_bucket  = "s3-${var.landscape}-${var.env}-${var.region_short}-${var.account_id}-terraform-state"
   remote_state_region  = var.region
   remote_state_profile = var.aws_profile
 }

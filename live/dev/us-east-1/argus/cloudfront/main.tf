@@ -23,7 +23,7 @@ module "cloudfront" {
   apigw_origin_host = replace(data.terraform_remote_state.api_gateway.outputs.api_endpoint, "https://", "")
 
   spa_origin = {
-    domain_name = "s3-${local.app_alias}-${var.env}-${var.region_short}-spa.s3.${var.region}.amazonaws.com"
+    domain_name = "s3-${local.app_alias}-${var.env}-${var.region_short}-${var.account_id}-spa.s3.${var.region}.amazonaws.com"
     origin_id   = "${local.app_alias}-spa-origin"
   }
 

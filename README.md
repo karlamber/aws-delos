@@ -64,7 +64,7 @@ Create the AWS account you will use, for example `aws-delos-dev`. Edit `environm
 Sign in and confirm the profile with `aws sso login --profile aws-delos-dev` and `aws sts get-caller-identity --profile aws-delos-dev`. Create the state bucket once for the account and region:
 
 ```bash
-aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-terraform-state --region us-east-1
+aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-000000000000-terraform-state --region us-east-1
 ```
 
 Put secrets into SSM Parameter Store yourself, as `SecureString` parameters. The `argus/ssm_param` stack uses `<SEED_OUTSIDE_TERRAFORM>` as the database-password placeholder, and a real password does not belong in Terraform or in git. Then apply the stacks in the order above, one at a time.
