@@ -61,10 +61,10 @@ Prod uses the same pattern with `live/prod/…` and `environments/prod/terraform
 
 Create the AWS account you will use, for example `aws-delos-dev`. Edit `environments/dev/terraform.tfvars`, or copy the example and keep real values in a gitignored `terraform.tfvars.local`. Set `account_id`, `route53_account_id`, `dns_manager_role_arn`, `artifact_bucket`, and `oidc_subjects`. `hosted_zone_name` defaults to `fifty9.net` and can stay or change with the zone you can actually write. When this environment needs public DNS or the shared Lambda zip, grant the member account access in the management shared-services account.
 
-Sign in and confirm the profile with `aws sso login --profile aws-delos-dev` and `aws sts get-caller-identity --profile aws-delos-dev`. Create the state bucket once for the account and region:
+Sign in and confirm the profile with `aws sso login --profile aws-delos-dev` and `aws sts get-caller-identity --profile aws-delos-dev`. Create the state bucket once for the account and region. Its name is `s3-delos-<env>-ue1-<account_id>-terraform-state`, using the `account_id` in that environment's tfvars, because S3 names are global and a second copy of this repo must not claim the same bucket. The committed tfvars still use the placeholder id, which produces `s3-delos-dev-ue1-000000000000-terraform-state` until you replace it. `scripts/generate-stacks.py` reads that same id when it writes each stack's `backend.hcl`.
 
 ```bash
-aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-000000000000-terraform-state --region us-east-1
+aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-<account_id>-terraform-state --region us-east-1
 ```
 
 Put secrets into SSM Parameter Store yourself, as `SecureString` parameters. The `argus/ssm_param` stack uses `<SEED_OUTSIDE_TERRAFORM>` as the database-password placeholder, and a real password does not belong in Terraform or in git. Then apply the stacks in the order above, one at a time.
