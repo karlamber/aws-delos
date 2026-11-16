@@ -54,3 +54,13 @@ data "terraform_remote_state" "cognito" {
   }
 }
 
+data "terraform_remote_state" "s3_lambda_artifacts" {
+  backend = "s3"
+  config = {
+    bucket  = local.remote_state_bucket
+    key     = "live/${var.env}/us-east-1/s3-lambda-artifacts/terraform.tfstate"
+    region  = local.remote_state_region
+    profile = local.remote_state_profile
+  }
+}
+

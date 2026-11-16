@@ -43,11 +43,6 @@ variable "dns_manager_role_arn" {
   description = "IAM role ARN to assume for Route53 DNS management."
 }
 
-variable "artifact_bucket" {
-  type        = string
-  description = "Shared S3 bucket for Lambda deployment packages."
-}
-
 variable "oidc_subjects" {
   type        = list(string)
   description = "GitHub OIDC subjects allowed to assume the deploy role."
@@ -55,5 +50,5 @@ variable "oidc_subjects" {
 
 variable "hosted_zone_name" {
   type        = string
-  description = "Public DNS zone for Argus hostnames (e.g. fifty9.net)."
+  description = "Public DNS zone for Argus hostnames (e.g. example.net)."
 }

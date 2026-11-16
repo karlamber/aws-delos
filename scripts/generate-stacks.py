@@ -55,11 +55,6 @@ variable "dns_manager_role_arn" {
   description = "IAM role ARN to assume for Route53 DNS management."
 }
 
-variable "artifact_bucket" {
-  type        = string
-  description = "Shared S3 bucket for Lambda deployment packages."
-}
-
 variable "oidc_subjects" {
   type        = list(string)
   description = "GitHub OIDC subjects allowed to assume the deploy role."
@@ -67,7 +62,7 @@ variable "oidc_subjects" {
 
 variable "hosted_zone_name" {
   type        = string
-  description = "Public DNS zone for Argus hostnames (e.g. fifty9.net)."
+  description = "Public DNS zone for Argus hostnames (e.g. example.net)."
 }
 """
 
@@ -380,19 +375,106 @@ module "github_oidc_provider" {
         env,
         "github_oidc_role",
         main_body="""
+locals {
+  # Same name tf-s3 produces for us-east-1/s3-lambda-artifacts.
+  lambda_artifact_bucket = "s3-${var.landscape}-${var.env}-${var.region_short}-${var.account_id}-lambda-artifacts"
+}
+
 module "github_oidc_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-role"
   version = "5.30.0"
 
-  name = "role-${var.landscape}-${var.env}-${var.region_short}-github_oidc"
+  name        = "role-${var.landscape}-${var.env}-${var.region_short}-github_oidc"
+  description = "GitHub Actions deploy role for easyCMDB. Updates the API Lambda and syncs the SPA origin."
 
   subjects = var.oidc_subjects
+}
 
-  policies = {
-    AmazonS3FullAccess   = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-    CloudFrontFullAccess = "arn:aws:iam::aws:policy/CloudFrontFullAccess"
-    AWSLambda_FullAccess = "arn:aws:iam::aws:policy/AWSLambda_FullAccess"
+data "aws_iam_policy_document" "deploy" {
+  statement {
+    sid = "UpdateApiFunctionCode"
+    actions = [
+      "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration",
+      "lambda:UpdateFunctionCode",
+      "lambda:PublishVersion",
+    ]
+    resources = [
+      "arn:aws:lambda:${var.region}:${var.account_id}:function:lambda-argus-${var.env}-${var.region_short}-*",
+    ]
   }
+
+  statement {
+    sid = "ReadLambdaArtifact"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+    ]
+    resources = [
+      "arn:aws:s3:::${local.lambda_artifact_bucket}/argus/*",
+    ]
+  }
+
+  statement {
+    sid       = "ListLambdaArtifact"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${local.lambda_artifact_bucket}"]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["argus/*"]
+    }
+  }
+
+  statement {
+    sid = "ListSpaOrigin"
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [
+      "arn:aws:s3:::s3-argus-${var.env}-${var.region_short}-${var.account_id}-cf-origin",
+    ]
+  }
+
+  statement {
+    sid = "SyncSpaOrigin"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload",
+    ]
+    resources = [
+      "arn:aws:s3:::s3-argus-${var.env}-${var.region_short}-${var.account_id}-cf-origin/*",
+    ]
+  }
+
+  statement {
+    sid = "InvalidateDistribution"
+    actions = [
+      "cloudfront:CreateInvalidation",
+      "cloudfront:GetInvalidation",
+      "cloudfront:ListInvalidations",
+    ]
+    resources = [
+      "arn:aws:cloudfront::${var.account_id}:distribution/*",
+    ]
+  }
+
+  # ListDistributions has no resource-level permission. The SPA deploy uses it
+  # only when resolving a distribution id from a domain name.
+  statement {
+    sid       = "ResolveDistributionId"
+    actions   = ["cloudfront:ListDistributions"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "deploy" {
+  name   = "policy-${var.landscape}-${var.env}-${var.region_short}-github_oidc_deploy"
+  role   = module.github_oidc_role.name
+  policy = data.aws_iam_policy_document.deploy.json
 }
 """,
     )
@@ -461,6 +543,38 @@ output "database_name" {
 
     write_stack(
         env,
+        "s3-lambda-artifacts",
+        main_body=f"""
+# Account-wide bucket for Lambda deployment zips. Each Lambda uses its own object key.
+
+module "s3_lambda_artifacts" {{
+  source = "../../../../tf-modules/tf-s3"
+{common_module_args().rstrip()}
+
+  # Landscape slot: this bucket is shared by every Lambda in the account.
+  app_alias = var.landscape
+  detail    = "lambda-artifacts"
+
+  versioning_enabled                    = true
+  encryption_enabled                    = true
+  multipart_abort_days_after_initiation = 7
+}}
+""",
+        outputs_body="""
+output "bucket_name" {
+  description = "Name of the shared Lambda artifact bucket."
+  value       = module.s3_lambda_artifacts.bucket_name
+}
+
+output "bucket_arn" {
+  description = "ARN of the shared Lambda artifact bucket."
+  value       = module.s3_lambda_artifacts.bucket_arn
+}
+""",
+    )
+
+    write_stack(
+        env,
         "argus/lambda-argus_api",
         remote_states=[
             ("lambda_policy", "argus/iam-lambda_policy"),
@@ -468,14 +582,14 @@ output "database_name" {
             ("vpc", "vpc"),
             ("rds", "argus/rds"),
             ("cognito", "cognito"),
+            ("s3_lambda_artifacts", "s3-lambda-artifacts"),
         ],
         main_body=f"""
 locals {{
-  app_alias       = "argus"
-  detail          = "argus_api"
-  description     = "Argus CMDB API Lambda (argus-api-lambda)"
-  artifact_bucket = var.artifact_bucket
-  artifact_key    = "${{local.app_alias}}/${{var.env}}/${{local.app_alias}}-${{local.detail}}.zip"
+  app_alias    = "argus"
+  detail       = "argus_api"
+  description  = "Argus CMDB API Lambda (argus-api-lambda)"
+  artifact_key = "${{local.app_alias}}/${{var.env}}/${{local.app_alias}}-${{local.detail}}.zip"
 }}
 
 module "lambda_argus_api" {{
@@ -502,7 +616,7 @@ module "lambda_argus_api" {{
     timeout               = 30
     application_log_level = "INFO"
     log_format            = "JSON"
-    s3_bucket             = local.artifact_bucket
+    s3_bucket             = data.terraform_remote_state.s3_lambda_artifacts.outputs.bucket_name
     s3_key                = local.artifact_key
     environment = {{
       variables = {{
@@ -553,7 +667,7 @@ module "lambda_argus_api" {{
         Sid      = "ReadDeploymentPackage"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-        Resource = "arn:aws:s3:::${{local.artifact_bucket}}/*"
+        Resource = "${{data.terraform_remote_state.s3_lambda_artifacts.outputs.bucket_arn}}/*"
       }}
     ]
   }}

@@ -8,7 +8,7 @@ This repository is the plain-Terraform layout for the same easyCMDB landscape th
 | [aws-kos](https://github.com/karlamber/aws-kos) | Python in `orchestrator/` | `account.json` and `region.json` | `stacks.json` | `data.terraform_remote_state` | `aws-kos-<env>/us-east-1/…` |
 | aws-delos (this repository) | Terraform CLI, with an optional shell helper | `environments/<env>/terraform.tfvars` | The order in this README | `data.terraform_remote_state` | `live/<env>/us-east-1/…` |
 
-Hostnames in this lab use the fifty9 domain, for example `argus-dev.fifty9.net`. Committed configuration uses placeholders. Replace them before an apply, and apply only after a real account, filled-in tfvars, and a state bucket exist.
+Hostnames in this sample use `example.net`, the reserved documentation zone, as in `argus-dev.example.net`. Every public hostname is built from `hosted_zone_name`, so the zone is changed in one place per environment: `environments/dev/terraform.tfvars` and `environments/prod/terraform.tfvars`, or the gitignored `terraform.tfvars.local` beside them. Cognito callbacks, the Lambda `CORS_ORIGIN`, the CloudFront alias, the certificate name, and the DNS record all read that variable. The stack `main.tf` files do not need a separate edit, and descriptions inside `tf-modules/` that mention `example.net` are examples only. Committed configuration uses placeholders. Replace them before an apply, and apply only after a real account, filled-in tfvars, and a state bucket exist.
 
 ## How a stack receives its settings
 
@@ -22,7 +22,7 @@ A VPC, as a concrete example, is edited in `live/<env>/us-east-1/vpc/main.tf`, r
 
 Two kinds of dependency show up in this tree, and they do not have the same requirement before a plan can succeed. An order-only relationship means apply B after A, for example the OIDC provider before the OIDC role, and B does not need A's state file. An output-wiring relationship means stack B has a `remote_state.tf` that reads A, so A must already have been applied and its state object must exist in S3. `terraform plan` previews changes and does not write that object. State appears after a successful apply.
 
-Apply one stack at a time, in this order: `cloudwatch_logging`, then `vpc`, then `cognito`, then `github_oidc_provider` followed by `github_oidc_role`, then `argus/iam-lambda_policy`, then `argus/rds`, then `argus/lambda-argus_api`, then `argus/api-gateway`, then `argus/tls`, then `argus/cloudfront`, then `argus/dns_record`, and finally `argus/ssm_param`. The dev and prod VPC stacks set `create_internet_gateway` and `create_nat_gateways` to false, because API Gateway terminates the public request and the Lambda only needs a path to Aurora inside the VPC.
+Apply one stack at a time, in this order: `cloudwatch_logging`, then `vpc`, then `cognito`, then `github_oidc_provider` followed by `github_oidc_role`, then `argus/iam-lambda_policy`, then `argus/rds`, then `s3-lambda-artifacts`, then `argus/lambda-argus_api`, then `argus/api-gateway`, then `argus/tls`, then `argus/cloudfront`, then `argus/dns_record`, and finally `argus/ssm_param`. The Lambda stack reads the artifact bucket through remote state, so `s3-lambda-artifacts` has to be applied before that plan can succeed. The dev and prod VPC stacks set `create_internet_gateway` and `create_nat_gateways` to false, because API Gateway terminates the public request and the Lambda only needs a path to Aurora inside the VPC.
 
 ## Layout
 
@@ -34,7 +34,7 @@ aws-delos/
 ├── tf-modules/
 ├── live/
 │   ├── dev/us-east-1/
-│   │   ├── cloudwatch_logging, vpc, cognito, github_oidc_*
+│   │   ├── cloudwatch_logging, vpc, cognito, github_oidc_*, s3-lambda-artifacts
 │   │   └── argus/
 │   └── prod/us-east-1/
 └── scripts/
@@ -59,7 +59,7 @@ Prod uses the same pattern with `live/prod/…` and `environments/prod/terraform
 
 ## Before the first apply
 
-Create the AWS account you will use, for example `aws-delos-dev`. Edit `environments/dev/terraform.tfvars`, or copy the example and keep real values in a gitignored `terraform.tfvars.local`. Set `account_id`, `route53_account_id`, `dns_manager_role_arn`, `artifact_bucket`, and `oidc_subjects`. `hosted_zone_name` defaults to `fifty9.net` and can stay or change with the zone you can actually write. When this environment needs public DNS or the shared Lambda zip, grant the member account access in the management shared-services account.
+Create the AWS account you will use, for example `aws-delos-dev`. Edit `environments/dev/terraform.tfvars`, or copy the example and keep real values in a gitignored `terraform.tfvars.local`. Set `account_id`, `route53_account_id`, `dns_manager_role_arn`, and `oidc_subjects`. `hosted_zone_name` is `example.net` in `environments/<env>/terraform.tfvars`. Set it to the zone you can write before an apply. That single value is what Cognito, Lambda, CloudFront, TLS, and DNS use. When this environment needs public DNS, grant the member account access in the management shared-services account, on the DNS manager role. Lambda deployment packages are stored in this account by `live/<env>/us-east-1/s3-lambda-artifacts`.
 
 Sign in and confirm the profile with `aws sso login --profile aws-delos-dev` and `aws sts get-caller-identity --profile aws-delos-dev`. Create the state bucket once for the account and region. Its name is `s3-delos-<env>-ue1-<account_id>-terraform-state`, using the `account_id` in that environment's tfvars, because S3 names are global and a second copy of this repo must not claim the same bucket. The committed tfvars still use the placeholder id, which produces `s3-delos-dev-ue1-000000000000-terraform-state` until you replace it. `scripts/generate-stacks.py` reads that same id when it writes each stack's `backend.hcl`.
 
@@ -68,6 +68,8 @@ aws --profile aws-delos-dev s3 mb s3://s3-delos-dev-ue1-<account_id>-terraform-s
 ```
 
 Put secrets into SSM Parameter Store yourself, as `SecureString` parameters. The `argus/ssm_param` stack uses `<SEED_OUTSIDE_TERRAFORM>` as the database-password placeholder, and a real password does not belong in Terraform or in git. Then apply the stacks in the order above, one at a time.
+
+The artifact bucket is named `s3-delos-<env>-ue1-<account_id>-lambda-artifacts`. When you plan or apply `argus/lambda-argus_api` through `scripts/tf-stack.sh`, the helper runs `scripts/ensure-lambda-zip.sh` first. That script looks for `argus/<env>/argus-argus_api.zip` and, when the object is missing, uploads a placeholder zip so Terraform can create the function. A later publish from [easycmdb-api](https://github.com/karlamber/easycmdb-api) replaces that object and updates `lambda-argus-<env>-ue1-argus_api`. If you invoke Terraform yourself, run `./scripts/ensure-lambda-zip.sh <env>` after the bucket exists and before the Lambda plan. The script stops when the bucket is not there yet.
 
 ## What stays local
 

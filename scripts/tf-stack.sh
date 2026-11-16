@@ -41,6 +41,10 @@ if [[ -f "$LOCAL_VAR_FILE" ]]; then
   VAR_ARGS+=(-var-file="$LOCAL_VAR_FILE")
 fi
 
+if [[ ( "$CMD" == "plan" || "$CMD" == "apply" ) && "$(basename "$STACK_PATH")" == "lambda-argus_api" ]]; then
+  "${REPO_ROOT}/scripts/ensure-lambda-zip.sh" "$ENV"
+fi
+
 if [[ "$CMD" == "init" ]]; then
   terraform init -backend-config=backend.hcl "$@"
 elif [[ "$CMD" == "plan" || "$CMD" == "apply" || "$CMD" == "destroy" || "$CMD" == "validate" || "$CMD" == "import" || "$CMD" == "console" ]]; then

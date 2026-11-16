@@ -1,3 +1,8 @@
+locals {
+  # Same name tf-s3 produces for us-east-1/s3-lambda-artifacts.
+  lambda_artifact_bucket = "s3-${var.landscape}-${var.env}-${var.region_short}-${var.account_id}-lambda-artifacts"
+}
+
 module "github_oidc_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-role"
   version = "5.30.0"
@@ -29,14 +34,14 @@ data "aws_iam_policy_document" "deploy" {
       "s3:GetObjectVersion",
     ]
     resources = [
-      "arn:aws:s3:::${var.artifact_bucket}/argus/*",
+      "arn:aws:s3:::${local.lambda_artifact_bucket}/argus/*",
     ]
   }
 
   statement {
     sid       = "ListLambdaArtifact"
     actions   = ["s3:ListBucket"]
-    resources = ["arn:aws:s3:::${var.artifact_bucket}"]
+    resources = ["arn:aws:s3:::${local.lambda_artifact_bucket}"]
     condition {
       test     = "StringLike"
       variable = "s3:prefix"

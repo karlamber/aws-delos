@@ -1,9 +1,8 @@
 locals {
-  app_alias       = "argus"
-  detail          = "argus_api"
-  description     = "easyCMDB API Lambda (easycmdb-api)"
-  artifact_bucket = var.artifact_bucket
-  artifact_key    = "${local.app_alias}/${var.env}/${local.app_alias}-${local.detail}.zip"
+  app_alias    = "argus"
+  detail       = "argus_api"
+  description  = "easyCMDB API Lambda (easycmdb-api)"
+  artifact_key = "${local.app_alias}/${var.env}/${local.app_alias}-${local.detail}.zip"
 }
 
 module "lambda_argus_api" {
@@ -35,7 +34,7 @@ module "lambda_argus_api" {
     timeout               = 30
     application_log_level = "INFO"
     log_format            = "JSON"
-    s3_bucket             = local.artifact_bucket
+    s3_bucket             = data.terraform_remote_state.s3_lambda_artifacts.outputs.bucket_name
     s3_key                = local.artifact_key
     environment = {
       variables = {
@@ -86,7 +85,7 @@ module "lambda_argus_api" {
         Sid      = "ReadDeploymentPackage"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-        Resource = "arn:aws:s3:::${local.artifact_bucket}/*"
+        Resource = "${data.terraform_remote_state.s3_lambda_artifacts.outputs.bucket_arn}/*"
       }
     ]
   }
